@@ -25,23 +25,47 @@ app.post("/login", (req, res) => {
 const blacklist = {};
 
 app.post("logout", (req, res) => {
-  const token = req.headers["authorization"].replace("Bearer", "");
+  const token = req.headers["authorization"];
+  if (!token) res.sendStatus(401);
+
+  token = token.replace("Bearer", "");
+
   blacklist[token] = true;
   setTimeout(
     () => delete blacklist[token],
     parseInt(process.env.JWT_EXPIRES) * 1000
   );
+  res.json({ token: null });
+});
+
+function verifyJWT(req, res, next) {
+  const token = req.headers["authorization"];
+  if (!token) res.sendStatus(401).json({ message: "Token Required" });
+
+  token = token.replace("Bearer", "");
+  if (blacklist[token])
+    return res.status(403).json({ message: "Blacklisted Token" });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded) return res.status(403).json({ message: "Invalid Token" });
+
+    res.locals.token = decoded;
+    return next();
+  } catch (err) {
+    res.status(403).json({ message: err.message });
+  }
+}
+
+// Rota para listar clientes
+app.get("/clientes", verifyJWT, (req, res, next) => {
+  console.log("Retornou todos clientes");
+  res.json([{ id: 1, nome: "luiz" }]);
 });
 
 // Rota principal
 app.get("/", (req, res, next) => {
   res.send("Tudo Ok por aqui");
-});
-
-// Rota para listar clientes
-app.get("/clientes", (req, res, next) => {
-  console.log("Retornou todos clientes");
-  res.json({ message: "Tudo ok por aqui" });
 });
 
 // Iniciando o servidor
