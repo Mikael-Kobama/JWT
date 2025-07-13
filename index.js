@@ -1,10 +1,28 @@
 // index.js
 require("dotenv-safe").config();
+const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const express = require("express");
+const { ref } = require("vue");
 const app = express();
 
 app.use(express.json());
+const refreshTokens = {};
+
+function generateRefreshToken(userId) {
+  const refreshTokens = uuidv4();
+  refreshTokens[token] = userID;
+
+  Object.keys(refreshTokens).forEach((t) => {
+    if (t !== token && refreshTokens[t] === userId)
+      refreshTokens[t] = undefined;
+  });
+
+  setTimeout(
+    () => delete refreshTokens[token],
+    parseInt(process.env.REFRESH_EXPIRES)
+  );
+}
 
 app.post("/login", (req, res) => {
   const user = req.body.user;
@@ -12,20 +30,37 @@ app.post("/login", (req, res) => {
   if (user === "luiz" && password === "123") {
     const id = 1;
 
-    const token = jwt.sign({ id }, process.env.JWT_SECRET, {
+    const accessToken = jwt.sign({ id }, process.env.JWT_SECRET, {
       expiresIn: parseInt(process.envJWT_EXPIRES),
     });
 
-    return res.json({ token });
+    const refreshToken = generateRefreshToken(id);
+
+    return res.json({ accessToken, refreshToken });
   }
 
   res.status(401).json({ message: "Credenciais inválidas" });
 });
 
+app.post("/refresh", (req, res) => {
+  let token = req.headers["authorization"];
+  if (!token) res.sendStatus(401).json({ message: "Token Required" });
+
+  token = token.replace("Bearer", "");
+  const userId = refreshTokens[token];
+  if (!userId) return res.status(401).json({ message: "Invalid Token!" });
+
+  const accessToken = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+    expiresIn: parseInt(process.env.JWT_EXPIRES),
+  });
+
+  return res.json({ accessToken, refreshToken: token });
+});
+
 const blacklist = {};
 
-app.post("logout", (req, res) => {
-  const token = req.headers["authorization"];
+app.post("logout", verifyJWT, (req, res) => {
+  let token = req.headers["authorization"];
   if (!token) res.sendStatus(401);
 
   token = token.replace("Bearer", "");
@@ -35,11 +70,16 @@ app.post("logout", (req, res) => {
     () => delete blacklist[token],
     parseInt(process.env.JWT_EXPIRES) * 1000
   );
-  res.json({ token: null });
+
+  Object.keys(refreshTokens).forEach((t) => {
+    if (refreshTokens[t] === res.locals.token.id) refreshTokens[t] = undefined;
+  });
+
+  res.json({ accessToken: null, token: null });
 });
 
 function verifyJWT(req, res, next) {
-  const token = req.headers["authorization"];
+  let token = req.headers["authorization"];
   if (!token) res.sendStatus(401).json({ message: "Token Required" });
 
   token = token.replace("Bearer", "");
